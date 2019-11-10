@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <title>Example</title>
+    <script src="https://threejs.org/build/three.min.js"></script>
+    <script src="https://threejs.org/examples/js/controls/TrackballControls.js"></script>
+    <script src="./text.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+
+    <H1 id="title" style="background-color : rgba( 0, 0, 0, 0.8 ); color:#ff0000;font-size:36pt"></H1>
+    <BR>
+    <blockquote id="text-output" style="background-color : rgba( 0, 0, 0, 0.5 ); color:#ffffff;font-size:18pt">
+
+    </blockquote>
+    <!-- Div which will hold the Output -->
+    <canvas id="WebGL-output" style="z-index:-1;position:fixed;top:0;left:0;width:100%;height:100%;"></canvas>
+    <canvas id="img-output" style="z-index:10;position:fixed;top:0;right:0;width:30%;height:30%;"></canvas>
+
+    <script type="text/javascript">
+
+        let tsCount = 0;
+        let tArea;
+        let letSpeak = true;
+        let nowSpeaking = false;
+
+        let imgCanvas;
+        let imgContext;
+        //let imgs = ['01.png', '02.png', '03.png', '04.png'];
+        let imgs = ['01.png', '02.png'];
+        let imgObject;
+        let imgCount = 0;
+
+        let WORLD_MIN_XYZ = -100;
+        let WORLD_MAX_XYZ = 100;
+        let ELEMENT_NUMBER_LIMIT = 10000;
+        let UNIT_LENGTH = (WORLD_MAX_XYZ - WORLD_MIN_XYZ) / Math.pow(ELEMENT_NUMBER_LIMIT, 1.0 / 3.0);
+
+        let ps = []; // primary elements
+
+        let SCENE;
+        let CAMERA;
+        let AXES;
+
+        let G = 0.1;
+        let R = 50;
+
+        let updateCount = 0;
+
+        let centerX = 0, centerY = 0, centerZ = 0;
+
+        //856x480が最適サイズ
+        function screenWidth() {
+            //return Math.min(window.innerWidth, window.innerHeight);
+            //return window.innerWidth;
+            return 854;
+        }
+        function screenHeight() {
+            //return Math.min(window.innerWidth, window.innerHeight);
+            //return window.innerHeight;
+            //return 480 / 854 * window.innerWidth;
+            return 480;
+        }
+
+        function putElementary(aScene, x, y, z) {
+            let cubeGeometry = new THREE.BoxGeometry(UNIT_LENGTH, UNIT_LENGTH, UNIT_LENGTH);
+            //let cubeGeometry = new THREE.SphereGeometry(UNIT_LENGTH / 2, 32, 32);
+            var cubeMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+            var cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+            cube.position.x = x;
+            cube.position.y = y;
+            cube.position.z = z;
+            cube.material.needsUpdate = true;
+            cube.needsUpdate = true;
+            cube.geometry.needsUpdate = true;
+
+            aScene.add(cube);
+            return cube;
+        }
+
+        function setColor(obj, r, g, b) {
+            obj.material.color["r"] = r;
+            obj.material.color["g"] = g;
+            obj.material.color["b"] = b;
+        }
+        function putInitElementaris(aScene) {
+            let delta = UNIT_LENGTH * 3;
+            for (let x = WORLD_MIN_XYZ; x <= WORLD_MAX_XYZ; x += delta) {
+                for (let y = WORLD_MIN_XYZ; y <= WORLD_MAX_XYZ; y += delta) {
+                    for (let z = WORLD_MIN_XYZ; z <= WORLD_MAX_XYZ; z += delta) {
+                        let elem = putElementary(aScene, x, y, z, 0xff0000);
+                        setColor(elem, (x - WORLD_MIN_XYZ) / (WORLD_MAX_XYZ - WORLD_MIN_XYZ), (y - WORLD_MIN_XYZ) / (WORLD_MAX_XYZ - WORLD_MIN_XYZ), 1);
+                        ps.push(elem);
+                    }
+                }
+            }
+        }
+
+        function moveToD(aP) {
+            function eachD(strA, oP, cP) {
+                let d = 0;
+                let r = Math.sqrt(Math.pow(oP.position.x - cP.position.x, 2) + Math.pow(oP.position.y - cP.position.y, 2) + Math.pow(oP.position.z - cP.position.z, 2));
+                if (r <= 0.5 * UNIT_LENGTH)
+                    d -= 10 * R * Math.sign(oP.position[strA] - cP.position[strA]) / (UNIT_LENGTH + Math.pow(r, 1));
+                else
+                    d -= R * Math.sign(oP.position[strA] - cP.position[strA]) / (UNIT_LENGTH + Math.pow(r, 2));
+                d += G * Math.sign(oP.position[strA] - cP.position[strA]) * (UNIT_LENGTH + r) / ELEMENT_NUMBER_LIMIT;
+                return d;
+            }
+            let x, y, z;
+            x = 0;
+            y = 0;
+            z = 0;
+            for (let p of ps) {
+                if (p === aP) continue;
+                x += eachD("x", p, aP);
+                y += eachD("y", p, aP);
+                z += eachD("z", p, aP);
+            }
+            return { x: x, y: y, z: z };
+        }
+
+        function moveRand() {
+            function newPosition(current) {
+                let move = (Math.random() - 0.5) * UNIT_LENGTH;
+                let newP = current + move;
+                return newP;
+            }
+            for (let p of ps) {
+                p.position.x = newPosition(p.position.x);
+                p.position.y = newPosition(p.position.y);
+                p.position.z = newPosition(p.position.z);
+            }
+        }
+
+        function move() {
+            for (let p of ps) {
+                let d = moveToD(p);
+                p.position.x += d.x;
+                p.position.y += d.y;
+                p.position.z += d.z;
+            }
+        }
+
+        function moveToCenter() {
+            centerX = 0;
+            centerY = 0;
+            centerY = 0;
+            for (let p of ps) {
+                centerX += p.position.x;
+                centerY += p.position.y;
+                centerZ += p.position.z;
+            }
+            centerX /= ps.length;
+            centerY /= ps.length;
+            centerZ /= ps.length;
+            let minDist = WORLD_MAX_XYZ;
+            let minP = ps[0];
+            for (let p of ps) {
+                p.position.x -= centerX;
+                p.position.y -= centerY;
+                p.position.z -= centerZ;
+            }
+        }
+
+        function nextRead() {
+            if (!letSpeak) return;
+            if (tsCount >= ts.length) {
+                letSpeak = false;
+                return;
+            }
+
+            let text = ts[tsCount];
+
+            tsCount = tsCount + 1;
+
+            tArea.innerHTML = text;
+
+            if (text.length > 0 && text.slice(0, 1) == '#') {
+                document.getElementById("title").innerHTML = "&nbsp;" + text;
+            }
+
+            if (text.length < 1) {
+                nowSpeaking = false;
+                setTimeout(function () { nextRead(); }, 1000);
+            }
+
+            var voices = window.speechSynthesis.getVoices();
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.pitch = 1;
+            uttr.rate = 1.2;
+            uttr.voice = voices[0];
+            nowSpeaking = (text.length >= 3) ? true : false;
+            speechSynthesis.speak(uttr);
+            uttr.onend = function (event) {
+                nowSpeaking = false;
+                nextRead();
+            }
+        }
+
+        function changeImage() {
+            imgCount = (imgCount + 1) % imgs.length;
+            imgObject.src = imgs[imgCount];
+        }
+        function resetImage() {
+            imgCount = 0;
+            imgObject.src = imgs[0];
+        }
+
+        function init() {
+            SCENE = new THREE.Scene();
+
+            CAMERA = new THREE.PerspectiveCamera();
+            CAMERA.position.x = WORLD_MAX_XYZ;
+            CAMERA.position.y = WORLD_MAX_XYZ * 3;
+            CAMERA.position.z = WORLD_MAX_XYZ * 3;
+            CAMERA.lookAt(new THREE.Vector3(0, 0, 0));
+
+            let webGLRenderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#WebGL-output') });
+            webGLRenderer.setClearColor(new THREE.Color(0x000));
+            webGLRenderer.setSize(screenWidth(), screenHeight());
+            webGLRenderer.shadowMap.enabled = true;
+
+            window.speechSynthesis.getVoices();
+
+            let trackballControls = new THREE.TrackballControls(CAMERA, webGLRenderer.domElement);
+            trackballControls.rotateSpeed = 1.0;
+            trackballControls.zoomSpeed = 1.0;
+            trackballControls.panSpeed = 1.0;
+            //        trackballControls.noZoom=false;
+            //        trackballControls.noPan=false;
+            trackballControls.staticMoving = true;
+            trackballControls.dynamicDampingFactor = 0.3;
+
+            let ambientLight = new THREE.AmbientLight(0xffffff);
+            SCENE.add(ambientLight);
+
+            AXES = new THREE.AxesHelper(50);
+            AXES.visible = false;
+            SCENE.add(AXES);
+
+            putInitElementaris(SCENE);
+
+            render();
+
+            tArea = document.getElementById("text-output");
+            tArea.innerHTML = "";
+
+            imgCanvas = document.getElementById("img-output");
+            imgContext = imgCanvas.getContext('2d');
+            imgObject = new Image();
+            imgObject.src = imgs[0];
+            imgObject.onload = function () {
+                imgContext.drawImage(imgObject, 0, 0, this.width, this.height, 0, 0, imgCanvas.width, imgCanvas.height);
+            }
+
+            function render() {
+                move();
+                moveToCenter();
+
+                updateCount = (updateCount + 1) % 1000;
+                CAMERA.position.x = 3 * WORLD_MAX_XYZ * Math.sin(updateCount / 1000 * 6.28);
+                CAMERA.position.y = 3 * WORLD_MAX_XYZ * Math.cos(updateCount / 1000 * 6.28);
+                CAMERA.position.z = 3 * WORLD_MAX_XYZ * Math.cos(updateCount / 1000 * 6.28);
+
+                if ((updateCount > 10) && !nowSpeaking) {
+                    resetImage();
+                }
+                if ((updateCount % 5 == 0) && nowSpeaking) {
+                    changeImage();
+                }
+
+                requestAnimationFrame(render);
+                trackballControls.update();
+                webGLRenderer.render(SCENE, CAMERA);
+            }
+
+            document.addEventListener('keydown', (event) => {
+                var keyName = event.key;
+                if (keyName == 'i') {
+                    console.log("Change");
+                    changeImage();
+                }
+                if (keyName == ' ') {
+                    moveRand();
+                }
+                if (keyName == 'a') {
+                    AXES.visible = AXES.visible ? false : true;
+                }
+                if (keyName == 'r') {
+                    R = 1;
+                }
+                if (keyName == 'e') {
+                    R *= 100;
+                }
+                if (keyName == 't') {
+                    nextRead();
+                }
+                if (keyName == 's') {
+                    letSpeak = letSpeak ? false : true;
+                    letSpeak ? console.log("let speak with type t.") : console.log("speak stopping.");
+                }
+            });
+        }
+        window.onload = init;
+    </script>
+</body>
+
+</html>
